@@ -73,10 +73,9 @@ class OmniASREvaluator:
 
     def __init__(
         self,
-        model_card: str = "omniASR_LLM_7B_v2",
+        model_card: str = "omniASR_LLM_Unlimited_7B_v2",
         language: str = "deu_Latn",
         batch_size: int = 2,
-        max_audio_duration: float = 40.0,
     ) -> None:
         """Initialize the evaluator.
 
@@ -84,12 +83,10 @@ class OmniASREvaluator:
             model_card: The model card name for the ASR model.
             language: Language code for transcription (e.g., "deu_Latn" for German).
             batch_size: Batch size for inference (small due to 7B model size).
-            max_audio_duration: Maximum audio duration in seconds (skip longer files).
         """
         self.model_card = model_card
         self.language = language
         self.batch_size = batch_size
-        self.max_audio_duration = max_audio_duration
         self._pipeline = None
 
     def _get_pipeline(self):
@@ -134,19 +131,7 @@ class OmniASREvaluator:
             f"max_samples={max_samples}"
         )
 
-        samples: List[Sample] = []
-        skipped_count = 0
-
-        # Collect samples, filtering by duration
-        for sample in dataset_source.iter_samples(split=split, max_samples=max_samples):
-            if sample.duration > self.max_audio_duration:
-                logger.debug(
-                    f"Skipping sample (duration {sample.duration:.1f}s > {self.max_audio_duration}s): "
-                    f"{sample.audio_path}"
-                )
-                skipped_count += 1
-                continue
-            samples.append(sample)
+        samples: List[Sample] = list(dataset_source.iter_samples(split=split, max_samples=max_samples))
 
         if not samples:
             logger.warning("No samples found for evaluation")
@@ -155,10 +140,10 @@ class OmniASREvaluator:
                 dataset=dataset_source.name,
                 language=self.language,
                 num_samples=0,
-                num_skipped=skipped_count,
+                num_skipped=0,
             )
 
-        logger.info(f"Evaluating {len(samples)} samples (skipped {skipped_count} due to duration)")
+        logger.info(f"Evaluating {len(samples)} samples")
 
         # Process in batches
         all_hypotheses: List[str] = []
@@ -239,7 +224,7 @@ class OmniASREvaluator:
             dataset=dataset_source.name,
             language=self.language,
             num_samples=len(samples),
-            num_skipped=skipped_count,
+            num_skipped=0,
             results={
                 "dialect_reference": dialect_metrics,
                 "ort_reference": ort_metrics,

@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-card",
         type=str,
-        default="omniASR_LLM_7B_v2",
+        default="omniASR_LLM_Unlimited_7B_v2",
         help="Model card name for the ASR model",
     )
     parser.add_argument(
@@ -64,12 +64,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Maximum number of samples to evaluate (None for all)",
-    )
-    parser.add_argument(
-        "--max-duration",
-        type=float,
-        default=120.0,
-        help="Maximum audio duration in seconds (skip longer files)",
     )
     parser.add_argument(
         "--channel",
@@ -125,7 +119,6 @@ def main() -> int:
     logger.info(f"Channel: {args.channel}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Max samples: {args.max_samples or 'all'}")
-    logger.info(f"Max duration: {args.max_duration}s")
 
     # Initialize dataset source
     dataset = BasRvg1Source(
@@ -138,7 +131,6 @@ def main() -> int:
         model_card=args.model_card,
         language=args.language,
         batch_size=args.batch_size,
-        max_audio_duration=args.max_duration,
     )
 
     # Run evaluation
