@@ -115,7 +115,7 @@ class WhisperEvaluator(BaseEvaluator):
                 output = pipe(
                     audio_path,
                     generate_kwargs=generate_kwargs,
-                    return_timestamps=False,
+                    return_timestamps=True,  # Required for audio > 30 seconds
                 )
                 text = output.get("text", "").strip()
                 results.append(text)
