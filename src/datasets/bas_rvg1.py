@@ -80,6 +80,10 @@ class BasRvg1Source(DatasetSource):
     ) -> Iterable[Sample]:
         """Iterate over BAS RVG1 samples.
 
+        Each sp1{channel}*.wav segment is treated as an individual sample.
+        ORT from the PAR file is used as primary transcript since TR2 (dialect)
+        is often missing in segment-level PAR files.
+
         Note: The dataset does not have explicit splits. All valid data found in
         directories matching the structure is yielded. Splitting should be handled
         externally if needed, or by selecting indices.
@@ -93,71 +97,79 @@ class BasRvg1Source(DatasetSource):
         metadata_map = self._load_speaker_metadata(self.data_dir)
 
         current_idx = 0
-        yielded_count = 0
 
         end_index = float("inf")
         if max_samples is not None:
-             end_index = start_index + max_samples
+            end_index = start_index + max_samples
 
         for speaker_dir in self._iter_speaker_directories(self.data_dir):
             if current_idx >= end_index:
                 break
 
             speaker_id = speaker_dir.name
-            audio_path = self._resolve_audio_path(speaker_dir, self.channel)
 
-            if not audio_path:
-                continue
+            # Find ALL sp1{channel}*.wav files (segment-based approach)
+            pattern = f"sp1{self.channel.lower()}*.wav"
+            audio_files = sorted(speaker_dir.glob(pattern))
 
-            par_path = audio_path.with_suffix(".par")
-            ort_transcription, dialect_transcription, kan_transcription = self._read_par_transcriptions(par_path)
+            if not audio_files:
+                # Fallback to .nis files
+                nis_pattern = f"sp1{self.channel.lower()}*.nis"
+                audio_files = sorted(speaker_dir.glob(nis_pattern))
 
-            if not dialect_transcription:
-                trl_path = speaker_dir / f"sp1{speaker_id}.trl"
-                dialect_transcription = self._read_trl_transcription(trl_path)
+            for audio_path in audio_files:
+                if current_idx >= end_index:
+                    break
 
-            if not dialect_transcription:
-                continue
+                # Read ORT from segment's PAR file
+                par_path = audio_path.with_suffix(".par")
+                ort_transcription, dialect_transcription, kan_transcription = self._read_par_transcriptions(par_path)
 
-            if current_idx < start_index:
+                # Use dialect (TR2) if available, otherwise use ORT as primary transcript
+                transcript = dialect_transcription or ort_transcription
+                if not transcript:
+                    continue
+
+                # Skip if before start_index
+                if current_idx < start_index:
+                    current_idx += 1
+                    continue
+
+                try:
+                    duration = sf.info(audio_path).duration
+                except Exception as e:
+                    logger.warning(f"Could not read duration for {audio_path}: {e}")
+                    duration = 0.0
+
+                speaker_meta = metadata_map.get(speaker_id, {})
+
+                sample_metadata = {
+                    "dataset": self.name,
+                    "source_dataset": self.name,
+                    "speaker_id": speaker_id,
+                    "segment_id": audio_path.stem,
+                    "ort_transcript": ort_transcription,
+                    "audio_channel": self.channel,
+                }
+
+                for key, val in speaker_meta.items():
+                    if val is not None:
+                        sample_metadata[f"speaker_{key}"] = val
+
+                yield Sample(
+                    transcript=transcript,
+                    duration=duration,
+                    dataset_info={
+                        "dataset_name": self.name,
+                        "language": "de",
+                        "split": split,
+                        "index": current_idx,
+                        "audio_path": str(audio_path),
+                    },
+                    metadata=sample_metadata
+                )
+
                 current_idx += 1
-                continue
-
-            try:
-                duration = sf.info(audio_path).duration
-            except Exception as e:
-                logger.warning(f"Could not read duration for {audio_path}: {e}")
-                duration = 0.0
-
-            speaker_meta = metadata_map.get(speaker_id, {})
-
-            sample_metadata = {
-                "dataset": self.name,
-                "source_dataset": self.name,
-                "speaker_id": speaker_id,
-                "ort_transcript": ort_transcription,
-                "audio_channel": self.channel,
-            }
-
-            for key, val in speaker_meta.items():
-                if val is not None:
-                    sample_metadata[f"speaker_{key}"] = val
-
-            yield Sample(
-                transcript=dialect_transcription,
-                duration=duration,
-                dataset_info={
-                    "dataset_name": self.name,
-                    "language": "de",
-                    "split": split,
-                    "index": current_idx,
-                    "audio_path": str(audio_path),
-                },
-                metadata=sample_metadata
-            )
-
-            yielded_count += 1
-            current_idx += 1
 
     def _replace_umlaut(self, match: re.Match[str]) -> str:
         char = match.group(1)
@@ -447,14 +459,3 @@ class BasRvg1Source(DatasetSource):
         except Exception as e:
             logger.error(f"Error iterating speaker directories in {dataset_root}: {e}")
 
-    def _resolve_audio_path(self, speaker_dir: Path, channel: str) -> Optional[Path]:
-        pattern = f"sp1{channel.lower()}*.wav"
-        candidates = sorted(speaker_dir.glob(pattern))
-        if candidates:
-            return candidates[0]
-
-        fallback_pattern = f"sp1{channel.lower()}*.nis"
-        nis_candidates = sorted(speaker_dir.glob(fallback_pattern))
-        if nis_candidates:
-            return nis_candidates[0]
-        return None
