@@ -1,0 +1,126 @@
+"""Whisper Evaluator using HuggingFace Transformers."""
+
+from __future__ import annotations
+
+import logging
+from typing import List
+
+from .base_evaluator import BaseEvaluator
+
+logger = logging.getLogger(__name__)
+
+
+class WhisperEvaluator(BaseEvaluator):
+    """Evaluator for OpenAI Whisper models via HuggingFace Transformers."""
+
+    # Mapping from omnilingual language codes to Whisper language names
+    LANGUAGE_MAP = {
+        "deu_Latn": "german",
+        "eng_Latn": "english",
+        "fra_Latn": "french",
+        "spa_Latn": "spanish",
+        "ita_Latn": "italian",
+        "por_Latn": "portuguese",
+        "nld_Latn": "dutch",
+        "pol_Latn": "polish",
+        "rus_Cyrl": "russian",
+        "jpn_Jpan": "japanese",
+        "zho_Hans": "chinese",
+        "kor_Hang": "korean",
+        "ara_Arab": "arabic",
+        "hin_Deva": "hindi",
+        "tur_Latn": "turkish",
+        "vie_Latn": "vietnamese",
+        "tha_Thai": "thai",
+        "heb_Hebr": "hebrew",
+        "ukr_Cyrl": "ukrainian",
+        "ces_Latn": "czech",
+        "swe_Latn": "swedish",
+        "dan_Latn": "danish",
+        "fin_Latn": "finnish",
+        "nor_Latn": "norwegian",
+        "hun_Latn": "hungarian",
+        "ron_Latn": "romanian",
+        "bul_Cyrl": "bulgarian",
+        "hrv_Latn": "croatian",
+        "slk_Latn": "slovak",
+        "slv_Latn": "slovenian",
+        "ell_Grek": "greek",
+        "cat_Latn": "catalan",
+        "eus_Latn": "basque",
+        "glg_Latn": "galician",
+    }
+
+    def __init__(
+        self,
+        model_name: str = "openai/whisper-large-v3",
+        language: str = "deu_Latn",
+        batch_size: int = 4,
+    ) -> None:
+        """Initialize the Whisper evaluator.
+
+        Args:
+            model_name: HuggingFace model ID (e.g., "openai/whisper-large-v3").
+            language: Language code for transcription (e.g., "deu_Latn").
+            batch_size: Batch size for inference.
+        """
+        super().__init__(model_name, language, batch_size)
+        self._pipeline = None
+        self._whisper_language = self.LANGUAGE_MAP.get(language, "german")
+
+    def _get_pipeline(self):
+        """Lazy-load the Whisper ASR pipeline."""
+        if self._pipeline is None:
+            logger.info(f"Loading Whisper pipeline: {self.model_name}")
+            try:
+                import torch
+                from transformers import pipeline
+
+                device = "cuda:0" if torch.cuda.is_available() else "cpu"
+                torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+                self._pipeline = pipeline(
+                    "automatic-speech-recognition",
+                    model=self.model_name,
+                    device=device,
+                    torch_dtype=torch_dtype,
+                )
+                logger.info(f"Whisper pipeline loaded on {device}")
+            except ImportError as e:
+                raise ImportError(
+                    "Whisper support requires transformers and torch. "
+                    "Install with: pip install transformers torch accelerate"
+                ) from e
+        return self._pipeline
+
+    def transcribe_batch(self, audio_paths: List[str]) -> List[str]:
+        """Transcribe a batch of audio files using Whisper.
+
+        Args:
+            audio_paths: List of paths to audio files.
+
+        Returns:
+            List of transcription strings.
+        """
+        pipe = self._get_pipeline()
+
+        generate_kwargs = {
+            "language": self._whisper_language,
+            "task": "transcribe",
+        }
+
+        results = []
+        for audio_path in audio_paths:
+            try:
+                output = pipe(
+                    audio_path,
+                    generate_kwargs=generate_kwargs,
+                    return_timestamps=False,
+                )
+                text = output.get("text", "").strip()
+                results.append(text)
+            except Exception as e:
+                logger.error(f"Error transcribing {audio_path}: {e}")
+                results.append("")
+
+        return results

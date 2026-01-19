@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 
 from src.datasets import BasRvg1Source
-from src.evaluation import OmniASREvaluator
+from src.evaluation import get_evaluator
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -75,8 +75,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("results/evaluation.json"),
-        help="Output file path for results",
+        default=None,
+        help="Output file path for results (default: results/<model_name>_evaluation.json)",
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -113,12 +113,20 @@ def main() -> int:
         logger.error(f"Data directory does not exist: {data_dir}")
         return 1
 
+    # Generate output path with model name prefix if not specified
+    output_path = args.output
+    if output_path is None:
+        # Sanitize model name for filename (replace / with _)
+        model_name_safe = args.model_card.replace("/", "_").replace("\\", "_")
+        output_path = Path(f"results/{model_name_safe}_evaluation.json")
+
     logger.info(f"Using data directory: {data_dir}")
     logger.info(f"Model: {args.model_card}")
     logger.info(f"Language: {args.language}")
     logger.info(f"Channel: {args.channel}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Max samples: {args.max_samples or 'all'}")
+    logger.info(f"Output: {output_path}")
 
     # Initialize dataset source
     dataset = BasRvg1Source(
@@ -126,9 +134,9 @@ def main() -> int:
         channel=args.channel,
     )
 
-    # Initialize evaluator
-    evaluator = OmniASREvaluator(
-        model_card=args.model_card,
+    # Initialize evaluator using factory function
+    evaluator = get_evaluator(
+        model_name=args.model_card,
         language=args.language,
         batch_size=args.batch_size,
     )
@@ -144,7 +152,7 @@ def main() -> int:
         return 1
 
     # Save results
-    result.save(args.output)
+    result.save(output_path)
 
     # Print summary
     print("\n" + "=" * 60)
@@ -176,7 +184,7 @@ def main() -> int:
         print(f"  Insertions:    {ort_res.get('insertions', 0)}")
 
     print("=" * 60)
-    print(f"\nResults saved to: {args.output}")
+    print(f"\nResults saved to: {output_path}")
 
     return 0
 

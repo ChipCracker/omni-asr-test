@@ -5,3 +5,13 @@ soundfile>=0.12.0
 
 # OmniASR dependencies (install from GitHub)
 # pip install git+https://github.com/facebookresearch/omnilingual-asr.git
+
+# Whisper (optional - for openai/whisper-large-v3 and similar models)
+# pip install transformers torch accelerate
+# transformers>=4.36.0
+# accelerate>=0.25.0
+# torch>=2.0.0
+
+# Parakeet/NeMo (optional - for nvidia/parakeet-ctc-1.1b and similar models)
+# pip install nemo-toolkit[asr]
+# nemo-toolkit[asr]>=1.22.0
